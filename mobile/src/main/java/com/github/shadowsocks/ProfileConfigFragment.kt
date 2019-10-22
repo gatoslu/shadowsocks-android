@@ -28,6 +28,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
 import android.view.MenuItem
+import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.*
 import com.github.shadowsocks.Core.app
@@ -36,6 +37,7 @@ import com.github.shadowsocks.database.ProfileManager
 import com.github.shadowsocks.plugin.*
 import com.github.shadowsocks.preference.*
 import com.github.shadowsocks.utils.*
+import com.github.shadowsocks.widget.ListListener
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.android.parcel.Parcelize
 
@@ -74,17 +76,17 @@ class ProfileConfigFragment : PreferenceFragmentCompat(),
         val activity = requireActivity()
         profileId = activity.intent.getLongExtra(Action.EXTRA_PROFILE_ID, -1L)
         addPreferencesFromResource(R.xml.pref_profile)
-        findPreference<EditTextPreference>(Key.remotePort)!!.onBindEditTextListener = EditTextPreferenceModifiers.Port
+        findPreference<EditTextPreference>(Key.remotePort)!!.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
         findPreference<EditTextPreference>(Key.password)!!.summaryProvider = PasswordSummaryProvider
         val serviceMode = DataStore.serviceMode
         findPreference<Preference>(Key.remoteDns)!!.isEnabled = serviceMode != Key.modeProxy
         findPreference<Preference>(Key.ipv6)!!.isEnabled = serviceMode == Key.modeVpn
         isProxyApps = findPreference(Key.proxyApps)!!
         isProxyApps.isEnabled = serviceMode == Key.modeVpn
-        isProxyApps.setOnPreferenceClickListener {
+        isProxyApps.setOnPreferenceChangeListener { _, newValue ->
             startActivity(Intent(activity, AppManager::class.java))
-            isProxyApps.isChecked = true
-            false
+            if (newValue as Boolean) DataStore.dirty = true
+            newValue
         }
         findPreference<Preference>(Key.metered)!!.apply {
             if (Build.VERSION.SDK_INT >= 28) isEnabled = serviceMode == Key.modeVpn else remove()
@@ -104,12 +106,17 @@ class ProfileConfigFragment : PreferenceFragmentCompat(),
             }
             true
         }
-        pluginConfigure.onBindEditTextListener = EditTextPreferenceModifiers.Monospace
+        pluginConfigure.setOnBindEditTextListener(EditTextPreferenceModifiers.Monospace)
         pluginConfigure.onPreferenceChangeListener = this
         initPlugins()
         receiver = Core.listenForPackageChanges(false) { initPlugins() }
         udpFallback = findPreference(Key.udpFallback)!!
         DataStore.privateStore.registerChangeListener(this)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        listView.setOnApplyWindowInsetsListener(ListListener)
     }
 
     private fun initPlugins() {

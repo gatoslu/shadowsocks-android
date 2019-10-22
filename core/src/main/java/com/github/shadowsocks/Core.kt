@@ -31,6 +31,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.UserManager
 import androidx.annotation.RequiresApi
@@ -52,6 +53,8 @@ import com.google.firebase.analytics.FirebaseAnalytics
 import io.fabric.sdk.android.Fabric
 import kotlinx.coroutines.DEBUG_PROPERTY_NAME
 import kotlinx.coroutines.DEBUG_PROPERTY_VALUE_ON
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 import kotlin.reflect.KClass
@@ -61,6 +64,7 @@ object Core {
 
     lateinit var app: Application
     lateinit var configureIntent: (Context) -> PendingIntent
+    val connectivity by lazy { app.getSystemService<ConnectivityManager>()!! }
     val packageInfo: PackageInfo by lazy { getPackageInfo(app.packageName) }
     val deviceStorage by lazy { if (Build.VERSION.SDK_INT < 24) app else DeviceStorageApp(app) }
     val analytics: FirebaseAnalytics by lazy { FirebaseAnalytics.getInstance(deviceStorage) }
@@ -103,7 +107,10 @@ object Core {
         System.setProperty(DEBUG_PROPERTY_NAME, DEBUG_PROPERTY_VALUE_ON)
         Fabric.with(deviceStorage, Crashlytics())   // multiple processes needs manual set-up
         FirebaseApp.initializeApp(deviceStorage)
-        WorkManager.initialize(deviceStorage, Configuration.Builder().build())
+        WorkManager.initialize(deviceStorage, Configuration.Builder().apply {
+            setExecutor { GlobalScope.launch { it.run() } }
+            setTaskExecutor { GlobalScope.launch { it.run() } }
+        }.build())
 
         // handle data restored/crash
         if (Build.VERSION.SDK_INT >= 24 && DataStore.directBootAware &&
@@ -128,7 +135,8 @@ object Core {
             val nm = app.getSystemService<NotificationManager>()!!
             nm.createNotificationChannels(listOf(
                     NotificationChannel("service-vpn", app.getText(R.string.service_vpn),
-                            NotificationManager.IMPORTANCE_LOW),
+                            if (Build.VERSION.SDK_INT >= 28) NotificationManager.IMPORTANCE_MIN
+                            else NotificationManager.IMPORTANCE_LOW),   // #1355
                     NotificationChannel("service-proxy", app.getText(R.string.service_proxy),
                             NotificationManager.IMPORTANCE_LOW),
                     NotificationChannel("service-transproxy", app.getText(R.string.service_transproxy),
